@@ -2,12 +2,16 @@ mod config;
 #[macro_use]
 extern crate failure;
 use clap::{App, Arg};
-use config::Config;
+use config::{Config, RemoteConfig};
+use std::error::Error;
 // use failure;
+use futures::future::try_join;
 use futures::stream::StreamExt;
+use futures::FutureExt;
 use std::fs::File;
 use std::net::SocketAddr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+// use std::time;
 use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
@@ -73,6 +77,30 @@ async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, fail
     Ok(ServerAddr(host, port))
 }
 
+async fn transfer(mut inbound: TcpStream, proxy_addr: &SocketAddr) -> Result<(), Box<dyn Error>> {
+    let mut outbound = TcpStream::connect(proxy_addr).await?;
+
+    let (mut ri, mut wi) = inbound.split();
+    let (mut ro, mut wo) = outbound.split();
+
+    let client_to_server = io::copy(&mut ri, &mut wo);
+    let server_to_client = io::copy(&mut ro, &mut wi);
+
+    try_join(client_to_server, server_to_client).await?;
+
+    Ok(())
+}
+
+fn pick_server(config: &Config) -> Result<&RemoteConfig, failure::Error> {
+    if config.server_list().is_empty() {
+        bail!("server config error");
+    }
+    let s_cfg = &config.server_list()[0];
+    // let timeout = time::Duration::new(5, 0);
+    // let stream = TcpStream::connect(s_cfg.host()).await?;
+    Ok(&s_cfg)
+}
+
 async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, failure::Error> {
     let mut buf = [0u8];
     let n = socket.read(&mut buf).await?;
@@ -112,8 +140,13 @@ async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, fail
     Ok(addr)
 }
 
-async fn local_server(host: &SocketAddr) -> Result<(), failure::Error> {
-    let mut listener = TcpListener::bind(host).await?;
+async fn local_server(config: &Config) -> Result<(), failure::Error> {
+    let remote = match pick_server(config) {
+        Ok(n) => n,
+        Err(e) => bail!("auth not required {:?}", e),
+    };
+
+    let mut listener = TcpListener::bind(config.host()).await?;
     let server = async move {
         let mut incoming = listener.incoming();
         while let Some(socket_res) = incoming.next().await {
@@ -128,6 +161,14 @@ async fn local_server(host: &SocketAddr) -> Result<(), failure::Error> {
                         }
                     };
                     println!("addr: {:?}", addr);
+
+                    let transfer = transfer(socket, remote.host()).map(|r| {
+                        if let Err(e) = r {
+                            println!("Failed to transfer; error={}", e);
+                        }
+                    });
+
+                    tokio::spawn(transfer);
                 }
                 Err(err) => {
                     println!("accept error = {:?}", err);
@@ -141,7 +182,7 @@ async fn local_server(host: &SocketAddr) -> Result<(), failure::Error> {
 
 #[tokio::main]
 async fn main() {
-    let matches = App::new("SS-demo2")
+    let matches = App::new("SS-client")
         .version("1.0")
         .author("qxoo")
         .arg(
@@ -153,7 +194,7 @@ async fn main() {
         )
         .get_matches();
 
-    let path = matches.value_of("config").unwrap_or("config.json");
+    let path = matches.value_of("config").unwrap_or("client.json");
     let mut file = match File::open(path) {
         Ok(f) => f,
         Err(_) => panic!("配置文件打开错误"),
@@ -163,7 +204,7 @@ async fn main() {
         Err(_) => panic!("配置文件错误"),
     };
     println!("config: {:?}", config);
-    match local_server(config.host()).await {
+    match local_server(&config).await {
         Ok(_) => (),
         Err(e) => panic!("local server: {}", e),
     };

@@ -1,11 +1,11 @@
 use failure;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ServerConfig {
+pub struct RemoteConfig {
     host: SocketAddr,
     password: String,
     encrypt_method: String,
@@ -14,8 +14,25 @@ pub struct ServerConfig {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     host: SocketAddr,
-    server_list: Vec<ServerConfig>,
+    server_list: Vec<RemoteConfig>,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ServerConfig {
+    host: SocketAddr,
+}
+
+// fn read_json_cfg<'de, T: de::Deserialize<'de>>(file: &mut File) -> Result<(), failure::Error> {
+//     let mut buf = String::new();
+//     file.read_to_string(&mut buf)?;
+//     // let cfg: T = serde_json::from_str(&buf)?;
+//     // Ok(cfg)
+//     Ok(())
+// }
+
+// trait ReadConfig {
+//     fn from_file(file: &mut File) -> Result<Box<dyn Self>, failure::Error>;
+// }
 
 impl Config {
     pub fn from_file(file: &mut File) -> Result<Config, failure::Error> {
@@ -27,12 +44,24 @@ impl Config {
     pub fn host(&self) -> &SocketAddr {
         &self.host
     }
-    pub fn server_list(&self) -> &Vec<ServerConfig> {
+    pub fn server_list(&self) -> &Vec<RemoteConfig> {
         &self.server_list
     }
 }
 
 impl ServerConfig {
+    pub fn from_file(file: &mut File) -> Result<ServerConfig, failure::Error> {
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)?;
+        let cfg = serde_json::from_str(&buf)?;
+        Ok(cfg)
+    }
+    pub fn host(&self) -> &SocketAddr {
+        &self.host
+    }
+}
+
+impl RemoteConfig {
     pub fn host(&self) -> &SocketAddr {
         &self.host
     }
