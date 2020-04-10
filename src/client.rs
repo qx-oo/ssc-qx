@@ -12,6 +12,7 @@ use std::fs::File;
 use std::net::SocketAddr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 // use std::time;
+use std::sync::Arc;
 use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
@@ -77,7 +78,7 @@ async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, fail
     Ok(ServerAddr(host, port))
 }
 
-async fn transfer(mut inbound: TcpStream, proxy_addr: &SocketAddr) -> Result<(), Box<dyn Error>> {
+async fn transfer(mut inbound: TcpStream, proxy_addr: SocketAddr) -> Result<(), Box<dyn Error>> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
 
     let (mut ri, mut wi) = inbound.split();
@@ -91,14 +92,14 @@ async fn transfer(mut inbound: TcpStream, proxy_addr: &SocketAddr) -> Result<(),
     Ok(())
 }
 
-fn pick_server(config: &Config) -> Result<&RemoteConfig, failure::Error> {
+fn pick_server(config: Arc<Config>) -> Result<RemoteConfig, failure::Error> {
     if config.server_list().is_empty() {
         bail!("server config error");
     }
-    let s_cfg = &config.server_list()[0];
+    let s_cfg = config.server_list()[0].clone();
     // let timeout = time::Duration::new(5, 0);
     // let stream = TcpStream::connect(s_cfg.host()).await?;
-    Ok(&s_cfg)
+    Ok(s_cfg)
 }
 
 async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, failure::Error> {
@@ -140,15 +141,11 @@ async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, fail
     Ok(addr)
 }
 
-async fn local_server(config: &Config) -> Result<(), failure::Error> {
-    let remote = match pick_server(config) {
-        Ok(n) => n,
-        Err(e) => bail!("auth not required {:?}", e),
-    };
-
+async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
     let mut listener = TcpListener::bind(config.host()).await?;
     let server = async move {
         let mut incoming = listener.incoming();
+        // let remote_host = remote.host();
         while let Some(socket_res) = incoming.next().await {
             match socket_res {
                 Ok(mut socket) => {
@@ -161,8 +158,15 @@ async fn local_server(config: &Config) -> Result<(), failure::Error> {
                         }
                     };
                     println!("addr: {:?}", addr);
+                    let remote_config = match pick_server(config.clone()) {
+                        Ok(ret) => ret,
+                        Err(err) => {
+                            println!("establish error {:?}", err);
+                            continue;
+                        }
+                    };
 
-                    let transfer = transfer(socket, remote.host()).map(|r| {
+                    let transfer = transfer(socket, remote_config.host().clone()).map(|r| {
                         if let Err(e) = r {
                             println!("Failed to transfer; error={}", e);
                         }
@@ -203,8 +207,9 @@ async fn main() {
         Ok(c) => c,
         Err(_) => panic!("配置文件错误"),
     };
+    let config = Arc::new(config);
     println!("config: {:?}", config);
-    match local_server(&config).await {
+    match local_server(config.clone()).await {
         Ok(_) => (),
         Err(e) => panic!("local server: {}", e),
     };

@@ -34,7 +34,7 @@ async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
                 Ok(mut socket) => {
                     let peer_addr = match socket.peer_addr() {
                         Ok(n) => n,
-                        Err(e) => {
+                        Err(_) => {
                             println!("Get peer_addr error");
                             continue;
                         }

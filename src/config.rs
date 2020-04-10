@@ -1,10 +1,10 @@
 use failure;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Read;
 use std::net::SocketAddr;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RemoteConfig {
     host: SocketAddr,
     password: String,
@@ -17,15 +17,18 @@ pub struct Config {
     server_list: Vec<RemoteConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ServerConfig {
     host: SocketAddr,
 }
 
-// fn read_json_cfg<'de, T: de::Deserialize<'de>>(file: &mut File) -> Result<(), failure::Error> {
+// fn read_json_cfg<'de, T>(file: &mut File) -> Result<(), failure::Error>
+// where
+//     T: de::Deserialize<'de>,
+// {
 //     let mut buf = String::new();
 //     file.read_to_string(&mut buf)?;
-//     // let cfg: T = serde_json::from_str(&buf)?;
+//     let cfg: T = serde_json::from_str(&buf.clone())?;
 //     // Ok(cfg)
 //     Ok(())
 // }
