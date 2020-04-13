@@ -10,25 +10,25 @@ use futures::stream::StreamExt;
 use futures::FutureExt;
 use std::fs::File;
 use std::net::SocketAddr;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr};
 // use std::time;
 use std::sync::Arc;
 use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
-#[derive(Debug)]
-pub enum ServerHost {
-    Ip(IpAddr),
-    Domain(String),
-    None,
-}
+// #[derive(Debug)]
+// pub enum ServerHost {
+//     Ip(IpAddr),
+//     Domain(String),
+//     None,
+// }
 
 #[derive(Debug)]
-pub struct ServerAddr(pub ServerHost, pub u16);
+pub struct ServerAddr(pub String);
 
-async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, failure::Error> {
-    let host = match atyp {
+async fn parse_socks5_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, failure::Error> {
+    let host: String = match atyp {
         0x01 => {
             // ipv4
             let mut addr = [0u8; 4];
@@ -36,8 +36,8 @@ async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, fail
             if n != 4 {
                 bail!("addr parse error");
             }
-            let addr = Ipv4Addr::from(addr);
-            ServerHost::Ip(IpAddr::V4(addr))
+            Ipv4Addr::from(addr).to_string()
+            // ServerHost::Ip(IpAddr::V4(addr))
         }
         0x03 => {
             // domain
@@ -53,7 +53,7 @@ async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, fail
                 bail!("domain parse error");
             }
             let domain = std::str::from_utf8(&domain)?;
-            ServerHost::Domain(domain.to_owned())
+            domain.to_owned()
         }
         0x04 => {
             // ipv6
@@ -62,40 +62,39 @@ async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, fail
             if n != 16 {
                 bail!("v6 addr parse error")
             }
-            let addr = Ipv6Addr::from(addr);
-            ServerHost::Ip(IpAddr::V6(addr))
+            Ipv6Addr::from(addr).to_string()
         }
         _ => {
             bail!("protocol error");
         }
     };
     let mut port = [0u8; 2];
-    let n = socket.read(&mut port).await?;
-    if n != 2 {
+    if 2 != socket.read(&mut port).await? {
         bail!("port parse error");
-    }
+    };
     let port = u16::from_be_bytes(port);
-    Ok(ServerAddr(host, port))
+    let addr = format!("{}:{}", host, port);
+    Ok(ServerAddr(addr))
 }
 
 async fn remote_establish_connection(
     socket: &mut TcpStream,
     remote_addr: ServerAddr,
 ) -> Result<(), failure::Error> {
-    let addr = match remote_addr.0 {
-        ServerHost::Ip(addr) => match addr {
-            IpAddr::V4(addr) => addr.octets().to_vec(),
-            IpAddr::V6(addr) => addr.octets().to_vec(),
-        },
-        _ => {
-            bail!("not ip");
-        }
-    };
+    // let (ip_type, addr) = match remote_addr.0 {
+    //     ServerHost::Ip(addr) => match addr {
+    //         IpAddr::V4(addr) => (4, addr.octets().to_vec()),
+    //         IpAddr::V6(addr) => (6, addr.octets().to_vec()),
+    //     },
+    //     ServerHost::Domain(addr) => (1, addr.as_bytes().to_vec()),
+    //     _ => {
+    //         bail!("not ip");
+    //     }
+    // };
+    let addr = remote_addr.0.as_bytes().to_vec();
     let len = addr.len() as u8;
     let mut pocket = vec![len];
     pocket.extend(addr.iter());
-    let port = remote_addr.1.to_be_bytes();
-    pocket.extend(port.iter());
     socket.write_all(&pocket).await?;
     Ok(())
 }
@@ -162,7 +161,7 @@ async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, fail
     } else {
         bail!("protocol data error");
     }
-    let addr = parse_addr(socket, buf[3]).await?;
+    let addr = parse_socks5_addr(socket, buf[3]).await?;
     socket
         .write_all(&[0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
         .await?;
