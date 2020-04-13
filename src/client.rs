@@ -78,8 +78,36 @@ async fn parse_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAddr, fail
     Ok(ServerAddr(host, port))
 }
 
-async fn transfer(mut inbound: TcpStream, proxy_addr: SocketAddr) -> Result<(), Box<dyn Error>> {
+async fn remote_establish_connection(
+    socket: &mut TcpStream,
+    remote_addr: ServerAddr,
+) -> Result<(), failure::Error> {
+    let addr = match remote_addr.0 {
+        ServerHost::Ip(addr) => match addr {
+            IpAddr::V4(addr) => addr.octets().to_vec(),
+            IpAddr::V6(addr) => addr.octets().to_vec(),
+        },
+        _ => {
+            bail!("not ip");
+        }
+    };
+    let len = addr.len() as u8;
+    let mut pocket = vec![len];
+    pocket.extend(addr.iter());
+    let port = remote_addr.1.to_be_bytes();
+    pocket.extend(port.iter());
+    socket.write_all(&pocket).await?;
+    Ok(())
+}
+
+async fn transfer(
+    mut inbound: TcpStream,
+    proxy_addr: SocketAddr,
+    remote_addr: ServerAddr,
+) -> Result<(), Box<dyn Error>> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
+
+    remote_establish_connection(&mut outbound, remote_addr).await?;
 
     let (mut ri, mut wi) = inbound.split();
     let (mut ro, mut wo) = outbound.split();
@@ -166,7 +194,7 @@ async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
                         }
                     };
 
-                    let transfer = transfer(socket, remote_config.host().clone()).map(|r| {
+                    let transfer = transfer(socket, remote_config.host().clone(), addr).map(|r| {
                         if let Err(e) = r {
                             println!("Failed to transfer; error={}", e);
                         }
