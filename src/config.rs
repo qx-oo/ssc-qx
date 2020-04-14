@@ -15,11 +15,13 @@ pub struct RemoteConfig {
 pub struct Config {
     host: SocketAddr,
     server_list: Vec<RemoteConfig>,
+    udp: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ServerConfig {
     host: SocketAddr,
+    udp: bool,
 }
 
 // fn read_json_cfg<'de, T>(file: &mut File) -> Result<(), failure::Error>
@@ -50,6 +52,9 @@ impl Config {
     pub fn server_list(&self) -> &Vec<RemoteConfig> {
         &self.server_list
     }
+    pub fn udp(&self) -> bool {
+        self.udp
+    }
 }
 
 impl ServerConfig {
@@ -61,6 +66,9 @@ impl ServerConfig {
     }
     pub fn host(&self) -> &SocketAddr {
         &self.host
+    }
+    pub fn udp(&self) -> bool {
+        self.udp
     }
 }
 

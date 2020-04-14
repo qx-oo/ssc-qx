@@ -1,9 +1,11 @@
 mod config;
+mod utils;
 #[macro_use]
 extern crate failure;
 use clap::{App, Arg};
 use config::{Config, RemoteConfig};
 use std::error::Error;
+use utils::{tcp_to_udp, udp_to_tcp};
 // use failure;
 use futures::future::try_join;
 use futures::stream::StreamExt;
@@ -14,15 +16,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 // use std::time;
 use std::sync::Arc;
 use tokio;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::prelude::*;
-
-// #[derive(Debug)]
-// pub enum ServerHost {
-//     Ip(IpAddr),
-//     Domain(String),
-//     None,
-// }
 
 #[derive(Debug)]
 pub struct ServerAddr(pub String);
@@ -32,24 +27,20 @@ async fn parse_socks5_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAdd
         0x01 => {
             // ipv4
             let mut addr = [0u8; 4];
-            let n = socket.read(&mut addr).await?;
-            if n != 4 {
+            if 4 != socket.read(&mut addr).await? {
                 bail!("addr parse error");
             }
             Ipv4Addr::from(addr).to_string()
-            // ServerHost::Ip(IpAddr::V4(addr))
         }
         0x03 => {
             // domain
             let mut domain_len = [0u8];
-            let n = socket.read(&mut domain_len).await?;
-            if n != 1 {
+            if 1 != socket.read(&mut domain_len).await? {
                 bail!("domain parse error");
             }
             let domain_len = domain_len[0] as usize;
             let mut domain = vec![0u8; domain_len];
-            let n = socket.read(&mut domain).await?;
-            if n == 0 {
+            if domain_len != socket.read(&mut domain).await? {
                 bail!("domain parse error");
             }
             let domain = std::str::from_utf8(&domain)?;
@@ -58,8 +49,7 @@ async fn parse_socks5_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAdd
         0x04 => {
             // ipv6
             let mut addr = [0u8; 16];
-            let n = socket.read(&mut addr).await?;
-            if n != 16 {
+            if 16 != socket.read(&mut addr).await? {
                 bail!("v6 addr parse error")
             }
             Ipv6Addr::from(addr).to_string()
@@ -77,27 +67,22 @@ async fn parse_socks5_addr(socket: &mut TcpStream, atyp: u8) -> Result<ServerAdd
     Ok(ServerAddr(addr))
 }
 
-async fn remote_establish_connection(
-    socket: &mut TcpStream,
-    remote_addr: ServerAddr,
-) -> Result<(), failure::Error> {
-    // let (ip_type, addr) = match remote_addr.0 {
-    //     ServerHost::Ip(addr) => match addr {
-    //         IpAddr::V4(addr) => (4, addr.octets().to_vec()),
-    //         IpAddr::V6(addr) => (6, addr.octets().to_vec()),
-    //     },
-    //     ServerHost::Domain(addr) => (1, addr.as_bytes().to_vec()),
-    //     _ => {
-    //         bail!("not ip");
-    //     }
-    // };
+fn get_packet(remote_addr: &ServerAddr) -> Vec<u8> {
     let addr = remote_addr.0.as_bytes().to_vec();
     let len = addr.len() as u8;
     let mut pocket = vec![len];
     pocket.extend(addr.iter());
-    socket.write_all(&pocket).await?;
-    Ok(())
+    pocket
 }
+
+// async fn remote_establish_connection(
+//     socket: &mut TcpStream,
+//     remote_addr: ServerAddr,
+// ) -> Result<(), failure::Error> {
+//     let pocket = get_packet(&remote_addr);
+//     socket.write_all(&pocket).await?;
+//     Ok(())
+// }
 
 async fn transfer(
     mut inbound: TcpStream,
@@ -106,7 +91,9 @@ async fn transfer(
 ) -> Result<(), Box<dyn Error>> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
 
-    remote_establish_connection(&mut outbound, remote_addr).await?;
+    // remote_establish_connection(&mut outbound, remote_addr).await?;
+    let pocket = get_packet(&remote_addr);
+    outbound.write_all(&pocket).await?;
 
     let (mut ri, mut wi) = inbound.split();
     let (mut ro, mut wo) = outbound.split();
@@ -119,13 +106,38 @@ async fn transfer(
     Ok(())
 }
 
+async fn udp_transfer(
+    mut inbound: TcpStream,
+    proxy_addr: SocketAddr,
+    remote_addr: ServerAddr,
+) -> Result<(), Box<dyn Error>> {
+    let local_addr: SocketAddr = if proxy_addr.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    }
+    .parse()?;
+    let outbound = UdpSocket::bind(local_addr).await?;
+
+    let pocket = get_packet(&remote_addr);
+    // outbound.send_to(&pocket, proxy_addr).await?;
+
+    let (mut ri, mut wi) = inbound.split();
+    let (mut ro, mut wo) = outbound.split();
+
+    try_join(
+        tcp_to_udp(&mut ri, &mut wo, &pocket),
+        udp_to_tcp(&mut ro, &mut wi),
+    )
+    .await?;
+    Ok(())
+}
+
 fn pick_server(config: Arc<Config>) -> Result<RemoteConfig, failure::Error> {
     if config.server_list().is_empty() {
         bail!("server config error");
     }
     let s_cfg = config.server_list()[0].clone();
-    // let timeout = time::Duration::new(5, 0);
-    // let stream = TcpStream::connect(s_cfg.host()).await?;
     Ok(s_cfg)
 }
 
@@ -136,14 +148,12 @@ async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, fail
         bail!("protocol error");
     }
     let mut method_len = [0u8];
-    let n = socket.read(&mut method_len).await?;
-    if n != 1 {
+    if 1 != socket.read(&mut method_len).await? {
         bail!("protocol error");
     }
     let method_len = method_len[0] as usize;
     let mut data = vec![0u8; method_len];
-    let n = socket.read(&mut data).await?;
-    if n != method_len {
+    if method_len != socket.read(&mut data).await? {
         bail!("protocol data error");
     }
     if data.contains(&0x00) {
@@ -153,8 +163,7 @@ async fn establish_connection(socket: &mut TcpStream) -> Result<ServerAddr, fail
         bail!("auth not required");
     }
     let mut buf = [0u8; 4];
-    let n = socket.read(&mut buf).await?;
-    if n != 4 {
+    if 4 != socket.read(&mut buf).await? {
         bail!("protocol data error");
     }
     if (buf[0] == 0x05) && (buf[1] == 0x01) && (buf[2] == 0x00) {
@@ -193,13 +202,25 @@ async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
                         }
                     };
 
-                    let transfer = transfer(socket, remote_config.host().clone(), addr).map(|r| {
-                        if let Err(e) = r {
-                            println!("Failed to transfer; error={}", e);
-                        }
-                    });
+                    if config.udp() {
+                        let transfer = udp_transfer(socket, remote_config.host().clone(), addr)
+                            .map(|r| {
+                                if let Err(e) = r {
+                                    println!("Failed to transfer; error={}", e);
+                                }
+                            });
 
-                    tokio::spawn(transfer);
+                        tokio::spawn(transfer);
+                    } else {
+                        let transfer =
+                            transfer(socket, remote_config.host().clone(), addr).map(|r| {
+                                if let Err(e) = r {
+                                    println!("Failed to transfer; error={}", e);
+                                }
+                            });
+
+                        tokio::spawn(transfer);
+                    }
                 }
                 Err(err) => {
                     println!("accept error = {:?}", err);

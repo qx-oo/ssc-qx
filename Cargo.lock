@@ -491,6 +491,7 @@ dependencies = [
 name = "ss-demo2"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "clap",
  "failure",
  "futures",

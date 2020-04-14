@@ -1,4 +1,5 @@
 mod config;
+mod utils;
 #[macro_use]
 extern crate failure;
 use clap::{App, Arg};
@@ -10,8 +11,9 @@ use std::error::Error;
 use std::fs::File;
 use std::net::SocketAddr;
 use tokio;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::prelude::*;
+use utils::{tcp_to_udp, udp_to_tcp};
 
 async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), Box<dyn Error>> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
@@ -27,6 +29,16 @@ async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), Box<
     Ok(())
 }
 
+async fn udp_transfer(inbound: UdpSocket, proxy_addr: String) -> Result<(), Box<dyn Error>> {
+    let mut outbound = TcpStream::connect(proxy_addr).await?;
+
+    let (mut ri, mut wi) = inbound.split();
+    let (mut ro, mut wo) = outbound.split();
+
+    try_join(tcp_to_udp(&mut ro, &mut wi), udp_to_tcp(&mut ri, &mut wo)).await?;
+    Ok(())
+}
+
 async fn parse_addr(socket: &mut TcpStream) -> Result<String, failure::Error> {
     let mut data = [0u8];
     if 1 != socket.read(&mut data).await? {
@@ -37,6 +49,20 @@ async fn parse_addr(socket: &mut TcpStream) -> Result<String, failure::Error> {
 
     let mut addr = vec![0u8; len];
     if 0 == socket.read(&mut addr).await? {
+        bail!("ip error");
+    }
+    let addr = std::str::from_utf8(&addr)?;
+    Ok(addr.to_owned())
+}
+
+async fn parse_udp_addr(socket: &mut UdpSocket) -> Result<String, failure::Error> {
+    let mut data = [0u8];
+    let (n, peer) = socket.recv_from(&mut data).await?;
+
+    let len = data[0] as usize;
+
+    let mut addr = vec![0u8; len];
+    if 0 == socket.recv(&mut addr).await? {
         bail!("ip error");
     }
     let addr = std::str::from_utf8(&addr)?;
@@ -65,13 +91,6 @@ async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
                     });
 
                     tokio::spawn(transfer);
-                    // let addr = match establish_connection(&mut socket).await {
-                    //     Ok(addr) => addr,
-                    //     Err(err) => {
-                    //         println!("establish error {:?}", err);
-                    //         continue;
-                    //     }
-                    // };
                 }
                 Err(err) => {
                     println!("accept error = {:?}", err);
@@ -80,6 +99,15 @@ async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
         }
     };
     server.await;
+    Ok(())
+}
+
+async fn start_udp_server(host: &SocketAddr) -> Result<(), failure::Error> {
+    let socket = UdpSocket::bind(&host).await?;
+    loop {
+        parse_udp_addr()
+        udp_transfer()
+    }
     Ok(())
 }
 
