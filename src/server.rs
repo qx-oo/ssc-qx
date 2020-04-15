@@ -29,15 +29,15 @@ async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), Box<
     Ok(())
 }
 
-async fn udp_transfer(inbound: UdpSocket, proxy_addr: String) -> Result<(), Box<dyn Error>> {
-    let mut outbound = TcpStream::connect(proxy_addr).await?;
+// async fn udp_transfer(inbound: UdpSocket, proxy_addr: String) -> Result<(), Box<dyn Error>> {
+//     let mut outbound = TcpStream::connect(proxy_addr).await?;
 
-    let (mut ri, mut wi) = inbound.split();
-    let (mut ro, mut wo) = outbound.split();
+//     let (mut ri, mut wi) = inbound.split();
+//     let (mut ro, mut wo) = outbound.split();
 
-    try_join(tcp_to_udp(&mut ro, &mut wi), udp_to_tcp(&mut ri, &mut wo)).await?;
-    Ok(())
-}
+//     try_join(tcp_to_udp(&mut ro, &mut wi), udp_to_tcp(&mut ri, &mut wo)).await?;
+//     Ok(())
+// }
 
 async fn parse_addr(socket: &mut TcpStream) -> Result<String, failure::Error> {
     let mut data = [0u8];
@@ -102,14 +102,14 @@ async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
     Ok(())
 }
 
-async fn start_udp_server(host: &SocketAddr) -> Result<(), failure::Error> {
-    let socket = UdpSocket::bind(&host).await?;
-    loop {
-        parse_udp_addr()
-        udp_transfer()
-    }
-    Ok(())
-}
+// async fn start_udp_server(host: &SocketAddr) -> Result<(), failure::Error> {
+//     let socket = UdpSocket::bind(&host).await?;
+//     loop {
+//         parse_udp_addr()
+//         udp_transfer()
+//     }
+//     Ok(())
+// }
 
 #[tokio::main]
 async fn main() {

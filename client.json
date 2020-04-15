@@ -7,5 +7,5 @@
             "encrypt_method": "213"
         }
     ],
-    "udp": true
+    "udp": false
 }
