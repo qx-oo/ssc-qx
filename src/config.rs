@@ -4,6 +4,9 @@ use std::fs::File;
 use std::io::Read;
 use std::net::SocketAddr;
 
+#[derive(Debug)]
+pub struct ServerAddr(pub String);
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RemoteConfig {
     host: SocketAddr,
