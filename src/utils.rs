@@ -18,6 +18,7 @@ pub async fn tcp_to_udp<'a>(
     writer: &mut SendHalf,
     pocket: &Vec<u8>,
 ) -> Result<(), io::Error> {
+    // convert tcp packet to udp
     loop {
         let mut buf = vec![0; 1024];
         let n = reader_i.read(&mut buf).await?;

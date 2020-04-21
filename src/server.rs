@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use tokio;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::prelude::*;
-use utils::{tcp_to_udp, udp_to_tcp};
+// use utils::{tcp_to_udp, udp_to_tcp};
 
 async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), Box<dyn Error>> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
@@ -105,8 +105,12 @@ async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
 // async fn start_udp_server(host: &SocketAddr) -> Result<(), failure::Error> {
 //     let socket = UdpSocket::bind(&host).await?;
 //     loop {
-//         parse_udp_addr()
-//         udp_transfer()
+//         let mut buf = vec![0; 1024];
+//         let n = reader.recv(&mut buf[..]).await?;
+
+//         if n > 0 {
+//             writer_i.write_all(&buf).await?;
+//         }
 //     }
 //     Ok(())
 // }
