@@ -6,6 +6,8 @@ use std::error::Error;
 use std::net::SocketAddr;
 use tokio::net::{TcpStream, UdpSocket};
 
+struct MyUdp {}
+
 pub async fn udp_transfer(
     mut inbound: TcpStream,
     proxy_addr: SocketAddr,
