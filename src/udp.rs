@@ -2,11 +2,21 @@ use crate::config::ServerAddr;
 use crate::utils::get_packet;
 use crate::utils::{tcp_to_udp, udp_to_tcp};
 use futures::future::try_join;
+use std::collections::HashMap;
 use std::error::Error;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use tokio::net::{TcpStream, UdpSocket};
 
-struct MyUdp {}
+struct UdpClient {
+    sock_map: Arc<Mutex<HashMap<String, TcpStream>>>,
+}
+
+impl UdpClient {
+    pub fn new(sock_map: Arc<Mutex<HashMap<String, TcpStream>>>) -> Self {
+        Self { sock_map: sock_map }
+    }
+}
 
 pub async fn udp_transfer(
     mut inbound: TcpStream,
