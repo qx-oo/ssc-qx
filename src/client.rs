@@ -77,7 +77,7 @@ async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
 
                     let _sock_map = sock_map.clone();
                     let mut map = _sock_map.lock().unwrap();
-                    map.insert(peer_addr, socket);
+                    // map.insert(peer_addr, socket);
                 }
                 Err(err) => {
                     println!("accept error = {:?}", err);
