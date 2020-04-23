@@ -1,7 +1,9 @@
 mod config;
+mod udp;
 mod utils;
 #[macro_use]
 extern crate failure;
+use crate::udp::UdpTunnel;
 use clap::{App, Arg};
 use config::ServerConfig;
 use futures::future::try_join;
@@ -11,7 +13,7 @@ use std::error::Error;
 use std::fs::File;
 use std::net::SocketAddr;
 use tokio;
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 // use utils::{tcp_to_udp, udp_to_tcp};
 
@@ -29,16 +31,6 @@ async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), Box<
     Ok(())
 }
 
-// async fn udp_transfer(inbound: UdpSocket, proxy_addr: String) -> Result<(), Box<dyn Error>> {
-//     let mut outbound = TcpStream::connect(proxy_addr).await?;
-
-//     let (mut ri, mut wi) = inbound.split();
-//     let (mut ro, mut wo) = outbound.split();
-
-//     try_join(tcp_to_udp(&mut ro, &mut wi), udp_to_tcp(&mut ri, &mut wo)).await?;
-//     Ok(())
-// }
-
 async fn parse_addr(socket: &mut TcpStream) -> Result<String, failure::Error> {
     let mut data = [0u8];
     if 1 != socket.read(&mut data).await? {
@@ -55,19 +47,19 @@ async fn parse_addr(socket: &mut TcpStream) -> Result<String, failure::Error> {
     Ok(addr.to_owned())
 }
 
-async fn parse_udp_addr(socket: &mut UdpSocket) -> Result<String, failure::Error> {
-    let mut data = [0u8];
-    let (n, peer) = socket.recv_from(&mut data).await?;
+// async fn parse_udp_addr(socket: &mut UdpSocket) -> Result<String, failure::Error> {
+//     let mut data = [0u8];
+//     let (n, peer) = socket.recv_from(&mut data).await?;
 
-    let len = data[0] as usize;
+//     let len = data[0] as usize;
 
-    let mut addr = vec![0u8; len];
-    if 0 == socket.recv(&mut addr).await? {
-        bail!("ip error");
-    }
-    let addr = std::str::from_utf8(&addr)?;
-    Ok(addr.to_owned())
-}
+//     let mut addr = vec![0u8; len];
+//     if 0 == socket.recv(&mut addr).await? {
+//         bail!("ip error");
+//     }
+//     let addr = std::str::from_utf8(&addr)?;
+//     Ok(addr.to_owned())
+// }
 
 async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
     let mut listener = TcpListener::bind(host).await?;
@@ -102,19 +94,6 @@ async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
     Ok(())
 }
 
-// async fn start_udp_server(host: &SocketAddr) -> Result<(), failure::Error> {
-//     let socket = UdpSocket::bind(&host).await?;
-//     loop {
-//         let mut buf = vec![0; 1024];
-//         let n = reader.recv(&mut buf[..]).await?;
-
-//         if n > 0 {
-//             writer_i.write_all(&buf).await?;
-//         }
-//     }
-//     Ok(())
-// }
-
 #[tokio::main]
 async fn main() {
     let matches = App::new("SS-server")
@@ -140,8 +119,16 @@ async fn main() {
     };
     println!("config: {:?}", config);
 
-    match start_server(&config.host()).await {
-        Ok(_) => {}
-        Err(e) => panic!("错误: {:?}", e),
-    };
+    if config.udp() {
+        let udp_tunnel = UdpTunnel::new();
+        match udp_tunnel.poll(&config.host()).await {
+            Err(e) => panic!("{}", e),
+            Ok(_) => {}
+        };
+    } else {
+        match start_server(&config.host()).await {
+            Ok(_) => {}
+            Err(e) => panic!("错误: {:?}", e),
+        };
+    }
 }

@@ -56,14 +56,20 @@ async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
                     };
 
                     if config.udp() {
-                        let transfer = udp_transfer(socket, remote_config.host().clone(), addr)
+                        // let transfer = udp_transfer(socket, remote_config.host().clone(), addr)
+                        //     .map(|r| {
+                        //         if let Err(e) = r {
+                        //             println!("Failed to transfer; error={}", e);
+                        //         }
+                        //     });
+                        let addr = addr.0.clone();
+                        let udp_transfer = udp_transfer(remote_config.host().clone(), socket, addr)
                             .map(|r| {
                                 if let Err(e) = r {
-                                    println!("Failed to transfer; error={}", e);
+                                    eprintln!("Failed to transfer; error={}", e);
                                 }
                             });
-
-                        tokio::spawn(transfer);
+                        tokio::spawn(udp_transfer);
                     } else {
                         let transfer =
                             transfer(socket, remote_config.host().clone(), addr).map(|r| {
