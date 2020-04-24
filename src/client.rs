@@ -8,14 +8,12 @@ use clap::{App, Arg};
 use config::{Config, RemoteConfig};
 use futures::stream::StreamExt;
 use futures::FutureExt;
-use std::collections::HashMap;
 use std::fs::File;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tcp::transfer;
 use tokio;
-use tokio::net::{TcpListener, TcpStream};
-use udp::udp_transfer;
+use tokio::net::TcpListener;
+use udp::ClientUdpTunnel;
 use utils::*;
 
 fn pick_server(config: Arc<Config>) -> Result<RemoteConfig, failure::Error> {
@@ -28,7 +26,6 @@ fn pick_server(config: Arc<Config>) -> Result<RemoteConfig, failure::Error> {
 
 async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
     let mut listener = TcpListener::bind(config.host()).await?;
-    let sock_map = Arc::new(Mutex::new(HashMap::<String, TcpStream>::new()));
     let server = async move {
         let mut incoming = listener.incoming();
         // let remote_host = remote.host();
@@ -56,19 +53,15 @@ async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
                     };
 
                     if config.udp() {
-                        // let transfer = udp_transfer(socket, remote_config.host().clone(), addr)
-                        //     .map(|r| {
-                        //         if let Err(e) = r {
-                        //             println!("Failed to transfer; error={}", e);
-                        //         }
-                        //     });
                         let addr = addr.0.clone();
-                        let udp_transfer = udp_transfer(remote_config.host().clone(), socket, addr)
-                            .map(|r| {
-                                if let Err(e) = r {
-                                    eprintln!("Failed to transfer; error={}", e);
-                                }
-                            });
+                        let udp_transfer =
+                            ClientUdpTunnel::poll(remote_config.host().clone(), socket, addr).map(
+                                |r| {
+                                    if let Err(e) = r {
+                                        eprintln!("Failed to transfer; error={}", e);
+                                    }
+                                },
+                            );
                         tokio::spawn(udp_transfer);
                     } else {
                         let transfer =
@@ -80,10 +73,6 @@ async fn local_server(config: Arc<Config>) -> Result<(), failure::Error> {
 
                         tokio::spawn(transfer);
                     }
-
-                    let _sock_map = sock_map.clone();
-                    let mut map = _sock_map.lock().unwrap();
-                    // map.insert(peer_addr, socket);
                 }
                 Err(err) => {
                     println!("accept error = {:?}", err);

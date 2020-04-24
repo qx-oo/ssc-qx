@@ -1,7 +1,5 @@
 use crate::config::ServerAddr;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use tokio::net::tcp::{ReadHalf, WriteHalf};
-use tokio::net::udp::{RecvHalf, SendHalf};
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 
@@ -11,37 +9,6 @@ pub fn get_packet(remote_addr: &ServerAddr) -> Vec<u8> {
     let mut pocket = vec![len];
     pocket.extend(addr.iter());
     pocket
-}
-
-pub async fn tcp_to_udp<'a>(
-    reader_i: &mut ReadHalf<'a>,
-    writer: &mut SendHalf,
-    pocket: &Vec<u8>,
-) -> Result<(), io::Error> {
-    // convert tcp packet to udp
-    loop {
-        let mut buf = vec![0; 1024];
-        let n = reader_i.read(&mut buf).await?;
-        if n > 0 {
-            let mut send_pocket = pocket.clone();
-            send_pocket.append(&mut buf);
-            writer.send(&send_pocket[..]).await?;
-        }
-    }
-}
-
-pub async fn udp_to_tcp<'a>(
-    reader: &mut RecvHalf,
-    writer_i: &mut WriteHalf<'a>,
-) -> Result<(), io::Error> {
-    loop {
-        let mut buf = vec![0; 1024];
-        let n = reader.recv(&mut buf[..]).await?;
-
-        if n > 0 {
-            writer_i.write_all(&buf).await?;
-        }
-    }
 }
 
 pub async fn parse_socks5_addr(

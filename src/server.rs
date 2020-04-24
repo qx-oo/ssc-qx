@@ -15,7 +15,6 @@ use std::net::SocketAddr;
 use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
-// use utils::{tcp_to_udp, udp_to_tcp};
 
 async fn transfer(mut inbound: TcpStream, proxy_addr: String) -> Result<(), Box<dyn Error>> {
     let mut outbound = TcpStream::connect(proxy_addr).await?;
@@ -46,20 +45,6 @@ async fn parse_addr(socket: &mut TcpStream) -> Result<String, failure::Error> {
     let addr = std::str::from_utf8(&addr)?;
     Ok(addr.to_owned())
 }
-
-// async fn parse_udp_addr(socket: &mut UdpSocket) -> Result<String, failure::Error> {
-//     let mut data = [0u8];
-//     let (n, peer) = socket.recv_from(&mut data).await?;
-
-//     let len = data[0] as usize;
-
-//     let mut addr = vec![0u8; len];
-//     if 0 == socket.recv(&mut addr).await? {
-//         bail!("ip error");
-//     }
-//     let addr = std::str::from_utf8(&addr)?;
-//     Ok(addr.to_owned())
-// }
 
 async fn start_server(host: &SocketAddr) -> Result<(), failure::Error> {
     let mut listener = TcpListener::bind(host).await?;
