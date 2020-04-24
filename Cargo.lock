@@ -618,7 +618,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ss-demo2"
+name = "ssc-qx"
 version = "0.1.0"
 dependencies = [
  "async-std",
